@@ -5,18 +5,28 @@ import {OBJLoader} from 'three/examples/jsm/loaders/OBJLoader.js';
 import {MTLLoader} from 'three/examples/jsm/loaders/MTLLoader.js';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
-import {VertexNormalsHelper} from 'three/examples/jsm/helpers/VertexNormalsHelper.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {GLTFExporter} from 'three/examples/jsm/exporters/GLTFExporter.js';
 
 
 class Map {
 
     constructor(options) {
         this.canvas = null;
+        this._events = {
+            animate: [],
+            renderBefore: [],
+            renderAfter: [],
+            click: [],
+            mousemove: [],
+            mousedown: [],
+            mouseup: []
+        }
         Object.assign(this, options);
     }
 
     async init() {
+        const that = this;
         const scene = this._scene = new THREE.Scene();
         const canvas = this.canvas;
 
@@ -59,11 +69,8 @@ class Map {
         scene.add(light);
 
         this.loadGrid(scene);
-
-        // 创建 stats 面板
-        const stats = new Stats();
-        stats.showPanel(0); // 0: FPS, 1: MS, 2: MB
-        document.body.appendChild(stats.dom);
+        this.loadFps();
+        this.loadEvent()
 
         const loader = new RGBELoader();
         loader.load('/resource/hdr/kloofendal_48d_partly_cloudy_puresky_1k.hdr', texture => {
@@ -77,13 +84,134 @@ class Map {
         });
 
         function animate() {
-            stats.begin();
+            that._events.animate.forEach(e => e.event && e.event.call(e.scope));
+            that._events.renderBefore.forEach(e => e.event && e.event.call(e.scope));
             renderer.render(scene, camera);
-            stats.end();
+            that._events.renderAfter.forEach(e => e.event && e.event.call(e.scope));
             requestAnimationFrame(animate);
         }
 
         animate();
+
+        // 响应窗口变化
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    on(key, listener, scope) {
+        this._events[key].push({event: listener, scope: scope});
+    }
+
+    un(key, listener, scope) {
+        const index = this._events[key].findIndex(
+            item => item.event === listener && item.scope === scope
+        );
+        if (index !== -1) {
+            this._events[key].splice(index, 1);
+        }
+    }
+
+    onAnimate(listener, scope) {
+        this.on('animate', listener, scope)
+    }
+
+    unAnimate(listener, scope) {
+        this.un('animate', listener, scope)
+    }
+
+    onRenderBefore(listener, scope) {
+        this.on('renderBefore', listener, scope)
+    }
+
+    unRenderBefore(listener, scope) {
+        this.un('renderBefore', listener, scope)
+    }
+
+    onRenderAfter(listener, scope) {
+        this.on('renderAfter', listener, scope)
+    }
+
+    unRenderAfter(listener, scope) {
+        this.un('renderAfter', listener, scope)
+    }
+
+    onClick(listener, scope) {
+        this.on('click', listener, scope)
+    }
+
+    unClick(listener, scope) {
+        this.un('click', listener, scope)
+    }
+
+    onMousemove(listener, scope) {
+        this.on('mousemove', listener, scope)
+    }
+
+    unMousemove(listener, scope) {
+        this.un('mousemove', listener, scope)
+    }
+
+    onMousedown(listener, scope) {
+        this.on('mousedown', listener, scope)
+    }
+
+    unMousedown(listener, scope) {
+        this.un('mousedown', listener, scope)
+    }
+
+    onMouseup(listener, scope) {
+        this.on('mouseup', listener, scope)
+    }
+
+    unMouseup(listener, scope) {
+        this.un('mouseup', listener, scope)
+    }
+
+    loadMouseEvent() {
+        const that = this;
+        let isClick = false;
+        let clickStart = new THREE.Vector2();
+
+        window.addEventListener('mousedown', (event) => {
+            that._events.mousedown.forEach(e => e.event && e.event.call(e.scope, event));
+            if (event.button === 0) { // 左键
+                isClick = true;
+                clickStart.set(event.clientX, event.clientY);
+            }
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            that._events.mousemove.forEach(e => e.event && e.event.call(e.scope, event));
+
+            const move = new THREE.Vector2(event.clientX, event.clientY);
+            if (move.distanceTo(clickStart) > 5) {
+                isClick = false;
+            }
+        });
+
+        window.addEventListener('mouseup', (event) => {
+            that._events.mouseup.forEach(e => e.event && e.event.call(e.scope, event));
+
+            if (event.button === 0 && isClick) {
+                that._events.click.forEach(e => e.event && e.event.call(e.scope, event));
+            }
+        });
+    }
+
+    loadEvent() {
+        this.loadMouseEvent();
+    }
+
+    loadFps() {
+        // 创建 stats 面板
+        const stats = new Stats();
+        stats.showPanel(0); // 0: FPS, 1: MS, 2: MB
+        document.body.appendChild(stats.dom);
+        this.onRenderBefore(item => stats.begin())
+        this.onRenderAfter(item => stats.end())
     }
 
     loadGrid(scene) {
@@ -228,11 +356,128 @@ class Map {
         // scene.add(line);
 
         // 轮廓线
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
-        line2.rotation.x = -Math.PI / 2;
-        scene.add(line2);
+        // const edges = new THREE.EdgesGeometry(geometry);
+        // const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
+        // line2.rotation.x = -Math.PI / 2;
+        // scene.add(line2);
 
+        return mesh;
+    }
+
+    async loadModel21() {
+        const that = this;
+        const scene = this._scene;
+        // 1. 你的 EPSG:4526 坐标点
+        const points = [
+            [38466388.2988292, 3846057.4789985027],
+            [38466363.106568456, 3845818.992263477],
+            [38465901.24845485, 3845798.838454883],
+            [38466353.02966416, 3845693.030959766],
+            [38466146.45312607, 3845330.2624050784],
+            [38466472.27303167, 3845647.68489043],
+            [38466630.14453232, 3845652.7233425784],
+            [38466824.96468206, 3845338.659825326],
+            [38466720.836670995, 3845666.1592149744],
+            [38466720.836670995, 3845795.479486784],
+            [38467118.87439072, 3845798.838454883],
+            [38466725.87512314, 3845884.4921414065],
+            [38466880.38765569, 3846185.1197862634],
+            [38466650.29834092, 3845906.3254340496],
+            [38466472.27303167, 3845887.8511095056],
+            [38466388.2988292, 3846057.4789985027], // 闭合
+        ];
+
+        // 2. 平移原点，使模型在中心附近（避免数值太大）
+        const center = this.getCenterFromPoints(points);
+
+        // 缩小坐标点（米 → 单位坐标），再设置合适的建筑高度
+        const scale = 0.01;
+        const height = 5; // 30 米变为 0.03 单位（配合缩放）
+
+        const outerPoints = points.map(([x, y], i) => {
+            const px = (x - center.x) * scale;
+            const py = (y - center.y) * scale;
+            return new THREE.Vector2(px, py)
+        })
+        const shape = new THREE.Shape(outerPoints);
+
+        let geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: height,
+            bevelEnabled: false
+        });
+
+        if (!geometry.index) {
+            geometry = BufferGeometryUtils.mergeVertices(geometry);
+        }
+
+        geometry.clearGroups(); // 清除默认 group
+
+        // 标记每个三角形属于哪个“逻辑面”
+        const index = geometry.index.array;
+        const normal = geometry.attributes.normal;
+        const faceMap = new Array(index.length / 3).fill(null);
+
+        let edgeId = 0;
+        for (let i = 0; i < index.length; i += 3) {
+            // 判断当前面是否为侧面（x/y法线分量接近 1，z 接近 0）
+            const a = index[i];
+            const nz = normal.getZ(a);
+            if (Math.abs(nz) < 0.01) {
+                // 假设 ExtrudeGeometry 生成的顺序稳定，每两个三角面是一组，属于一条边
+                faceMap[i / 3] = `edge_${edgeId}`;
+                faceMap[i / 3 + 1] = `edge_${edgeId}`;
+                // geometry.addGroup(i, i * 3, edgeId);
+                i += 3; // 多走一个三角面
+                edgeId++;
+            } else {
+                // top 或 bottom 面
+                faceMap[i / 3] = nz > 0 ? 'top' : 'bottom';
+            }
+        }
+
+        let indexFace = 0;
+        let currFace = faceMap[0];
+        let currIndex = 0;
+        for (let i = 0; i < faceMap.length; i++) {
+            if (currFace !== faceMap[i] || i === faceMap.length - 1) {
+                geometry.addGroup(currIndex * 3, i * 3, indexFace);
+                currIndex = i;
+                currFace = faceMap[i];
+                indexFace++;
+            }
+        }
+
+        const sideMaterials = [];
+
+// 顶部/底部材质
+        sideMaterials.push(new THREE.MeshBasicMaterial({color: 0x669999}));
+        sideMaterials.push(new THREE.MeshBasicMaterial({color: 0xff6600}));
+
+// === 5. 加载贴图材质 ===
+        const textureLoader = new THREE.TextureLoader();
+        for (let i = 0; i < indexFace; i++) {
+            let texture = textureLoader.load(i % 2 === 0 ? '/resource/25F9651F418944C0B6DEE32CB30BD7E4.jpg' : '/resource/20051814itj9ddm3.jpg');
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            sideMaterials.push(
+                new THREE.MeshBasicMaterial({
+                    map: texture, // 你准备的贴图：side1.jpg, side2.jpg...
+                })
+            );
+        }
+
+// === 6. 创建 Mesh ===
+        const mesh = new THREE.Mesh(geometry, sideMaterials);
+        mesh.rotateX(-Math.PI / 2); // 放到地面
+        scene.add(mesh);
+
+        setTimeout(() => {
+            const newTexture = new THREE.TextureLoader().load('/resource/20051814lid32ehd.jpg');
+            newTexture.wrapS = THREE.RepeatWrapping;
+            newTexture.wrapT = THREE.RepeatWrapping;
+            mesh.material[4].map = newTexture
+            mesh.material.needsUpdate = true;
+        }, 2000)
         return mesh;
     }
 
@@ -308,8 +553,8 @@ class Map {
         const center = this.getCenterFromPoints(points);
 
         // 缩小坐标点（米 → 单位坐标），再设置合适的建筑高度
-        const scale = 1;
-        const height = 100; // 30 米变为 0.03 单位（配合缩放）
+        const scale = 0.01;
+        const height = 5; // 30 米变为 0.03 单位（配合缩放）
 
         const outerPoints = points.map(([x, y], i) => {
             const px = (x - center.x) * scale;
@@ -424,7 +669,6 @@ class Map {
     }
 
     async loadModel5() {
-
         const that = this;
         const scene = this._scene;
         const renderer = this._renderer;
@@ -463,101 +707,420 @@ class Map {
         })
 
 
-// 创建二维轮廓
+        // 创建二维轮廓
         const shape = new THREE.Shape(outerPoints);
+
+        // 拉伸生成建筑
         const extrudeSettings = {depth: height, bevelEnabled: false};
         let geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         if (!geometry.index) {
             geometry = BufferGeometryUtils.mergeVertices(geometry);
         }
-        // --- 分组每个侧面 ---
-        const faceMap = []; // 每个三角形属于哪个边
-        const edges = shape.getPoints();
+        // 为颜色准备 Buffer 属性
+        geometry.computeVertexNormals();
+        const colorAttr = new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 3), 3);
+        geometry.setAttribute('color', colorAttr);
 
-        // 标记：哪个三角形属于哪个 edge_n（粗略）
-        for (let i = 0; i < geometry.index.count / 3; i++) {
-            const a = geometry.index.array[i * 3];
-            const nx = geometry.attributes.normal.getX(a);
-            const ny = geometry.attributes.normal.getY(a);
-            const nz = geometry.attributes.normal.getZ(a);
-            if (Math.abs(nz) < 0.1) {
-                faceMap[i] = `edge_${i % edges.length}`;
-            } else {
-                faceMap[i] = 'topbottom';
-            }
-        }
-
-        // 贴图和材质
-        const textureLoader = new THREE.TextureLoader();
-        const textures = {};
-        const materialsMap = {};
-
-        for (let i = 0; i < edges.length; i++) {
-            const t = textureLoader.load('/resource/20051814itj9ddm3.jpg');
-            t.wrapS = t.wrapT = THREE.RepeatWrapping;
-            t.repeat.set(1, 1);
-            textures[`edge_${i}`] = t;
-            materialsMap[`edge_${i}`] = new THREE.MeshStandardMaterial({map: t});
-        }
-
-        materialsMap['topbottom'] = new THREE.MeshStandardMaterial({color: 0xdddddd});
-
-        // 分组 geometry
-        geometry.clearGroups();
-        const groupIndices = {};
-        for (let i = 0; i < faceMap.length; i++) {
-            const type = faceMap[i];
-            if (!groupIndices[type]) groupIndices[type] = [];
-            groupIndices[type].push(i * 3);
-        }
-
-        let materialArray = [];
-        let typeToMaterialIndex = {};
-        let index = 0;
-        for (const [type, starts] of Object.entries(groupIndices)) {
-            for (const start of starts) {
-                geometry.addGroup(start, 3, index);
-            }
-            materialArray.push(materialsMap[type]);
-            typeToMaterialIndex[type] = index++;
-        }
-
-        const mesh = new THREE.Mesh(geometry, materialArray);
+        // 创建 mesh
+        const material = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            flatShading: true
+        });
+        const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
         scene.add(mesh);
 
-        // 灯光
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        const dl = new THREE.DirectionalLight(0xffffff, 0.5);
-        dl.position.set(20, 50, 10);
-        scene.add(dl);
+        // 标记每个三角形属于哪个“逻辑面”
+        const index = geometry.index.array;
+        const normal = geometry.attributes.normal;
+        const color = geometry.attributes.color;
 
-        // 鼠标交互
+        const faceMap = new Array(index.length / 3).fill(null);
+
+        let edgeId = 0;
+        for (let i = 0; i < index.length; i += 3) {
+            // 判断当前面是否为侧面（x/y法线分量接近 1，z 接近 0）
+            const a = index[i];
+            const nz = normal.getZ(a);
+            if (Math.abs(nz) < 0.01) {
+                // 假设 ExtrudeGeometry 生成的顺序稳定，每两个三角面是一组，属于一条边
+                faceMap[i / 3] = `edge_${edgeId}`;
+                faceMap[i / 3 + 1] = `edge_${edgeId}`;
+                i += 3; // 多走一个三角面
+                edgeId++;
+            } else {
+                // top 或 bottom 面
+                faceMap[i / 3] = nz > 0 ? 'top' : 'bottom';
+            }
+        }
+
+        // 恢复默认颜色
+        function resetColor() {
+            const color = geometry.attributes.color;
+            for (let i = 0; i < color.count; i++) {
+                color.setXYZ(i, 0.8, 0.8, 0.8);
+            }
+            color.needsUpdate = true;
+        }
+
+// 设置某一类面颜色
+        function highlightFaceGroup(type) {
+            resetColor();
+            for (let i = 0; i < faceMap.length; i++) {
+                if (faceMap[i] === type) {
+                    const ia = index[i * 3];
+                    const ib = index[i * 3 + 1];
+                    const ic = index[i * 3 + 2];
+                    color.setXYZ(ia, 1, 0, 0);
+                    color.setXYZ(ib, 1, 0, 0);
+                    color.setXYZ(ic, 1, 0, 0);
+                }
+            }
+            color.needsUpdate = true;
+        }
+
+        // 鼠标拾取
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        let hoveredFace = null;
 
-        window.addEventListener('mousemove', (event) => {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        // 监听鼠标移动
+        let onMousemove = (event) => {
+            const {clientX, clientY} = event;
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObject(mesh);
             if (intersects.length > 0) {
-                const i = Math.floor(intersects[0].faceIndex / 1);
-                const type = Object.keys(materialsMap).find(k => faceMap[i] === k);
-                if (type && type !== 'topbottom') {
-                    materialsMap[type].color.set(0xff0000); // 高亮颜色
+                const faceIndex = Math.floor(intersects[0].faceIndex / 1); // 每个面是三角形
+                const type = faceMap[faceIndex];
+                if (type !== hoveredFace) {
+                    hoveredFace = type;
+                    highlightFaceGroup(type);
                 }
             } else {
-                // 恢复原色
-                for (const key in materialsMap) {
-                    if (key.startsWith('edge_')) {
-                        materialsMap[key].color.set(0xffffff);
+                hoveredFace = null;
+                resetColor();
+            }
+        };
+        window.addEventListener('mousemove', onMousemove);
+
+        let clickFace = null;
+
+        let onClick = (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(mesh);
+            if (intersects.length > 0) {
+                const faceIndex = Math.floor(intersects[0].faceIndex / 1); // 每个面是三角形
+                const type = faceMap[faceIndex];
+                if (type !== clickFace) {
+                    clickFace = type;
+                    showOutline(type);
+                }
+            } else {
+                clickFace = null;
+                clearOutline();
+            }
+        };
+        this.onClick(onClick)
+        // window.addEventListener('click', onClick);
+        let outlineGroup = new THREE.Group(); // 保存当前轮廓
+        scene.add(outlineGroup);
+
+        function showOutline(type) {
+            outlineGroup.clear();
+            if (type === 'bottom') {
+                return
+            }
+            const indices = [];
+            for (let i = 0; i < faceMap.length; i++) {
+                if (faceMap[i] === type) {
+                    const ia = geometry.index.getX(i * 3);
+                    const ib = geometry.index.getX(i * 3 + 1);
+                    const ic = geometry.index.getX(i * 3 + 2);
+                    if (!indices.includes(ia)) {
+                        indices.push(ia);
+                    }
+                    if (!indices.includes(ib)) {
+                        indices.push(ib);
+                    }
+                    if (!indices.includes(ic)) {
+                        indices.push(ic);
                     }
                 }
             }
-        });
+            const pos = geometry.attributes.position;
+            const vertices = indices.map(i => new THREE.Vector3(
+                pos.getX(i), pos.getY(i), pos.getZ(i)
+            ));
+            const edges = [];
+            if (type === 'top') {
+                for (let i = 1; i < vertices.length; i++) {
+                    edges.push([vertices[i - 1], vertices[i]])
+                    if (i === vertices.length - 1) {
+                        edges.push([vertices[i], vertices[0]]);
+                    }
+                }
+            } else {
+                edges.push(
+                    [vertices[0], vertices[1]],
+                    [vertices[1], vertices[3]],
+                    [vertices[3], vertices[2]],
+                    [vertices[2], vertices[0]]
+                )
+            }
+
+            for (const [start, end] of edges) {
+                const path = new THREE.LineCurve3(start, end);
+                const tube = new THREE.TubeGeometry(path, 1, 0.04, 4, false);
+                const tubeMaterial = new THREE.MeshBasicMaterial({color: 0x00ffff});
+                const mesh = new THREE.Mesh(tube, tubeMaterial);
+                mesh.rotation.x = -Math.PI / 2;
+                outlineGroup.add(mesh);
+            }
+        }
+
+        function clearOutline() {
+            if (outlineGroup) {
+                outlineGroup.clear();
+            }
+        }
+
         return mesh;
+    }
+
+    async loadModel6() {
+        const that = this;
+        const scene = this._scene;
+        const renderer = this._renderer;
+        const camera = this._camera;
+
+        // 1. 你的 EPSG:4526 坐标点
+        const points = [
+            [38466388.2988292, 3846057.4789985027],
+            [38466363.106568456, 3845818.992263477],
+            [38465901.24845485, 3845798.838454883],
+            [38466353.02966416, 3845693.030959766],
+            [38466146.45312607, 3845330.2624050784],
+            [38466472.27303167, 3845647.68489043],
+            [38466630.14453232, 3845652.7233425784],
+            [38466824.96468206, 3845338.659825326],
+            [38466720.836670995, 3845666.1592149744],
+            [38466720.836670995, 3845795.479486784],
+            [38467118.87439072, 3845798.838454883],
+            [38466725.87512314, 3845884.4921414065],
+            [38466880.38765569, 3846185.1197862634],
+            [38466650.29834092, 3845906.3254340496],
+            [38466472.27303167, 3845887.8511095056],
+            [38466388.2988292, 3846057.4789985027], // 闭合
+        ];
+
+        // 2. 平移原点，使模型在中心附近（避免数值太大）
+        const center = this.getCenterFromPoints(points);
+
+        // 缩小坐标点（米 → 单位坐标），再设置合适的建筑高度
+        const scale = 0.01;
+        const height = 5; // 30 米变为 0.03 单位（配合缩放）
+
+        const outerPoints = points.map(([x, y], i) => {
+            const px = (x - center.x) * scale;
+            const py = (y - center.y) * scale;
+            return new THREE.Vector2(px, py)
+        })
+        const shape = new THREE.Shape(outerPoints);
+
+        let geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: height,
+            bevelEnabled: false
+        });
+
+        if (!geometry.index) {
+            geometry = BufferGeometryUtils.mergeVertices(geometry);
+        }
+
+        geometry.clearGroups(); // 清除默认 group
+
+        // 标记每个三角形属于哪个“逻辑面”
+        const index = geometry.index.array;
+        const normal = geometry.attributes.normal;
+        const faceMap = new Array(index.length / 3).fill(null);
+
+        let edgeId = 0;
+        for (let i = 0; i < index.length; i += 3) {
+            // 判断当前面是否为侧面（x/y法线分量接近 1，z 接近 0）
+            const a = index[i];
+            const nz = normal.getZ(a);
+            if (Math.abs(nz) < 0.01) {
+                // 假设 ExtrudeGeometry 生成的顺序稳定，每两个三角面是一组，属于一条边
+                faceMap[i / 3] = `${edgeId}`;
+                faceMap[i / 3 + 1] = `${edgeId}`;
+                // geometry.addGroup(i, i * 3, edgeId);
+                i += 3; // 多走一个三角面
+                edgeId++;
+            } else {
+                // top 或 bottom 面
+                faceMap[i / 3] = nz > 0 ? 'top' : 'bottom';
+            }
+        }
+
+        // 默认材质，标准材质，支持光照、纹理、贴图
+        const textureLoader = new THREE.TextureLoader();
+        const defaultMaterial = new THREE.MeshStandardMaterial({});
+        const sideMaterials = [];
+        const mapMaterials = {};
+        let indexFace = 0;
+        let currFace = faceMap[0];
+        let currIndex = 0;
+        for (let i = 0; i < faceMap.length; i++) {
+            if (currFace !== faceMap[i] || i === faceMap.length - 1) {
+                geometry.addGroup(currIndex * 3, i * 3, indexFace);
+
+                // 添加材质
+                mapMaterials[currFace] = indexFace;
+                sideMaterials.push(new THREE.MeshStandardMaterial({}));
+
+                currIndex = i;
+                currFace = faceMap[i];
+                indexFace++;
+            }
+        }
+
+        // 创建 Mesh
+        const mesh = new THREE.Mesh(geometry, sideMaterials);
+        mesh.rotateX(-Math.PI / 2); // 放到地面
+        scene.add(mesh);
+
+        const outlineClickGroup = new THREE.Group(); // 保存当前轮廓
+        scene.add(outlineClickGroup);
+
+        const outlineMousemoveGroup = new THREE.Group(); // 保存当前轮廓
+        scene.add(outlineMousemoveGroup);
+
+        const mouseFace = {
+            click: null,
+            move: null
+        }
+        // 鼠标拾取
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let mouseEvent = (event, group, key, callback) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(mesh);
+            if (intersects.length > 0) {
+                const faceIndex = Math.floor(intersects[0].faceIndex / 1); // 每个面是三角形
+                const type = faceMap[faceIndex];
+                if (type !== mouseFace[key]) {
+                    mouseFace[key] = type;
+                    group.clear();
+                    let outlines = getOutlines(type);
+                    for (let i = 0; i < outlines.length; i++) {
+                        group.add(outlines[i]);
+                    }
+                    callback && callback(type);
+                }
+            } else {
+                mouseFace[key] = null;
+                group.clear();
+                callback && callback(null);
+            }
+        };
+
+        this.onClick((event) => {
+            mouseEvent(event, outlineClickGroup, 'click', (type) => {
+                if (type === null) {
+                    return;
+                }
+                let map = textureLoader.load('/resource/20051814lid32ehd.jpg');
+                map.wrapS = THREE.RepeatWrapping;
+                map.wrapT = THREE.RepeatWrapping;
+                mesh.material[mapMaterials[type]].map = map;
+                mesh.material[mapMaterials[type]].needsUpdate = true;
+            })
+        })
+
+        this.onMousemove((event) => {
+            mouseEvent(event, outlineMousemoveGroup, 'move')
+        })
+
+        function getOutlines(type) {
+            if (type === 'bottom') {
+                return [];
+            }
+            const indices = [];
+            for (let i = 0; i < faceMap.length; i++) {
+                if (faceMap[i] === type) {
+                    const ia = geometry.index.getX(i * 3);
+                    const ib = geometry.index.getX(i * 3 + 1);
+                    const ic = geometry.index.getX(i * 3 + 2);
+                    if (!indices.includes(ia)) {
+                        indices.push(ia);
+                    }
+                    if (!indices.includes(ib)) {
+                        indices.push(ib);
+                    }
+                    if (!indices.includes(ic)) {
+                        indices.push(ic);
+                    }
+                }
+            }
+            const pos = geometry.attributes.position;
+            const vertices = indices.map(i => new THREE.Vector3(
+                pos.getX(i), pos.getY(i), pos.getZ(i)
+            ));
+            const edges = [];
+            if (type === 'top') {
+                for (let i = 1; i < vertices.length; i++) {
+                    edges.push([vertices[i - 1], vertices[i]])
+                    if (i === vertices.length - 1) {
+                        edges.push([vertices[i], vertices[0]]);
+                    }
+                }
+            } else {
+                edges.push(
+                    [vertices[0], vertices[1]],
+                    [vertices[1], vertices[3]],
+                    [vertices[3], vertices[2]],
+                    [vertices[2], vertices[0]]
+                )
+            }
+            const meshes = [];
+            for (const [start, end] of edges) {
+                const path = new THREE.LineCurve3(start, end);
+                const tube = new THREE.TubeGeometry(path, 1, 0.04, 4, false);
+                const tubeMaterial = new THREE.MeshBasicMaterial({color: 0x00ffff});
+                const mesh = new THREE.Mesh(tube, tubeMaterial);
+                mesh.rotation.x = -Math.PI / 2;
+                meshes.push(mesh)
+            }
+            return meshes;
+        }
+
+        return mesh;
+    }
+
+    exportGlb(meshOrGroup) {
+        const that = this;
+        const exporter = new GLTFExporter();
+
+// 例如：导出一个 mesh 或 group
+        exporter.parse(
+            meshOrGroup,
+            (result) => {
+                // result 是 ArrayBuffer（如果是 binary: true）或 JSON
+                const blob = new Blob([result], {type: 'application/octet-stream'});
+                that.saveBlob(blob, 'model.glb'); // 下载
+            },
+            {binary: true} // ⬅️ 设置为 true 表示导出为 .glb（二进制）
+        );
+    }
+
+    exportScene() {
+
     }
 
     flyTo(object) {
@@ -603,6 +1166,14 @@ class Map {
         });
     }
 
+    clear() {
+        this._scene.clear();
+    }
+
+    remove(obj) {
+        this._scene.remove(obj)
+    }
+
     /**
      * 计算二维坐标点的中心点
      * @param {Array<[number, number]>} points - 点数组，每个元素为 [x, y]
@@ -643,6 +1214,17 @@ class Map {
                 y: sumY / points.length
             };
         }
+    }
+
+    saveBlob(blob, filename) {
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        let url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
     }
 }
 
