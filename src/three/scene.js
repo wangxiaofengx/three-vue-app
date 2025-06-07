@@ -328,6 +328,7 @@ class Map {
         texture.wrapT = THREE.RepeatWrapping;
         let material2 = new THREE.MeshStandardMaterial({
             map: texture,
+            side: THREE.DoubleSide
         });
 
         let texture3 = textureLoader.load('/resource/20051814itj9ddm3.jpg');
@@ -335,6 +336,7 @@ class Map {
         texture3.wrapT = THREE.RepeatWrapping;
         let material3 = new THREE.MeshStandardMaterial({
             map: texture3,
+            side: THREE.DoubleSide
         });
 
         let texture4 = textureLoader.load('/resource/25F9651F418944C0B6DEE32CB30BD7E4.jpg');
@@ -342,6 +344,7 @@ class Map {
         texture4.wrapT = THREE.RepeatWrapping;
         let material4 = new THREE.MeshStandardMaterial({
             map: texture4,
+            side: THREE.DoubleSide
         });
 
         const mesh = new THREE.Mesh(geometry, [material2, material3, material4]);
@@ -353,6 +356,7 @@ class Map {
 
         // const wireframe = new THREE.WireframeGeometry(geometry);
         // const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({color: 0xff0000}));
+        // line.rotation.x = -Math.PI / 2;
         // scene.add(line);
 
         // 轮廓线
@@ -424,8 +428,8 @@ class Map {
             const nz = normal.getZ(a);
             if (Math.abs(nz) < 0.01) {
                 // 假设 ExtrudeGeometry 生成的顺序稳定，每两个三角面是一组，属于一条边
-                faceMap[i / 3] = `edge_${edgeId}`;
-                faceMap[i / 3 + 1] = `edge_${edgeId}`;
+                faceMap[i / 3] = `${edgeId}`;
+                faceMap[i / 3 + 1] = `${edgeId}`;
                 // geometry.addGroup(i, i * 3, edgeId);
                 i += 3; // 多走一个三角面
                 edgeId++;
@@ -435,49 +439,46 @@ class Map {
             }
         }
 
+        // 默认材质，标准材质，支持光照、纹理、贴图
+        const textureLoader = new THREE.TextureLoader();
+        const defaultMaterial = new THREE.MeshStandardMaterial({});
+        const sideMaterials = [];
+        const mapMaterials = {};
         let indexFace = 0;
         let currFace = faceMap[0];
-        let currIndex = 0;
+        let count = 0;
+        let start = 0;
         for (let i = 0; i < faceMap.length; i++) {
-            if (currFace !== faceMap[i] || i === faceMap.length - 1) {
-                geometry.addGroup(currIndex * 3, i * 3, indexFace);
-                currIndex = i;
+            let isEnd = i === faceMap.length - 1;
+            if (currFace !== faceMap[i] || isEnd) {
+                if (isEnd) {
+                    count += 3;
+                }
+
+                geometry.addGroup(start, count, indexFace);
+
+                // 添加材质
+                mapMaterials[currFace] = indexFace;
+                let texture = textureLoader.load(indexFace % 2 === 0 ? '/resource/25F9651F418944C0B6DEE32CB30BD7E4.jpg' : '/resource/20051814itj9ddm3.jpg');
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                sideMaterials.push(new THREE.MeshStandardMaterial({
+                    map: texture,
+                    side: THREE.DoubleSide
+                }));
+
                 currFace = faceMap[i];
                 indexFace++;
+                start += count
+                count = 0;
             }
+            count += 3;
         }
-
-        const sideMaterials = [];
-
-// 顶部/底部材质
-        sideMaterials.push(new THREE.MeshBasicMaterial({color: 0x669999}));
-        sideMaterials.push(new THREE.MeshBasicMaterial({color: 0xff6600}));
-
-// === 5. 加载贴图材质 ===
-        const textureLoader = new THREE.TextureLoader();
-        for (let i = 0; i < indexFace; i++) {
-            let texture = textureLoader.load(i % 2 === 0 ? '/resource/25F9651F418944C0B6DEE32CB30BD7E4.jpg' : '/resource/20051814itj9ddm3.jpg');
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            sideMaterials.push(
-                new THREE.MeshBasicMaterial({
-                    map: texture, // 你准备的贴图：side1.jpg, side2.jpg...
-                })
-            );
-        }
-
-// === 6. 创建 Mesh ===
+        console.log(geometry.groups,sideMaterials)
+        // 创建 Mesh
         const mesh = new THREE.Mesh(geometry, sideMaterials);
         mesh.rotateX(-Math.PI / 2); // 放到地面
         scene.add(mesh);
-
-        setTimeout(() => {
-            const newTexture = new THREE.TextureLoader().load('/resource/20051814lid32ehd.jpg');
-            newTexture.wrapS = THREE.RepeatWrapping;
-            newTexture.wrapT = THREE.RepeatWrapping;
-            mesh.material[4].map = newTexture
-            mesh.material.needsUpdate = true;
-        }, 2000)
         return mesh;
     }
 
@@ -899,31 +900,69 @@ class Map {
         const camera = this._camera;
 
         // 1. 你的 EPSG:4526 坐标点
+        // const points = [
+        //     [38466388.2988292, 3846057.4789985027],
+        //     [38466363.106568456, 3845818.992263477],
+        //     [38465901.24845485, 3845798.838454883],
+        //     [38466353.02966416, 3845693.030959766],
+        //     [38466146.45312607, 3845330.2624050784],
+        //     [38466472.27303167, 3845647.68489043],
+        //     [38466630.14453232, 3845652.7233425784],
+        //     [38466824.96468206, 3845338.659825326],
+        //     [38466720.836670995, 3845666.1592149744],
+        //     [38466720.836670995, 3845795.479486784],
+        //     [38467118.87439072, 3845798.838454883],
+        //     [38466725.87512314, 3845884.4921414065],
+        //     [38466880.38765569, 3846185.1197862634],
+        //     [38466650.29834092, 3845906.3254340496],
+        //     [38466472.27303167, 3845887.8511095056],
+        //     [38466388.2988292, 3846057.4789985027], // 闭合
+        // ];
+
+
+        // 38475934.749355,3847665.029031
+        // 38475943.144576,3847665.020336
+        // 38475943.157475,3847667.650043
+        // 38475948.069688,3847667.625946
+        // 38475948.056889,3847665.015239
+        // 38475965.075333,3847664.997649
+        // 38475965.078432,3847667.637057
+        // 38475969.957144,3847667.63136
+        // 38475969.954046,3847664.992652
+        // 38475986.610989,3847664.975363
+        // 38475986.618087,3847667.64997
+        // 38475991.4743,3847667.637073
+        // 38475991.467201,3847664.970366
+        // 38476000.037023,3847664.961571
+        // 38476000.028428,3847654.810443
+        // 38475934.73066,3847654.818002
+        // 38475934.749355,3847665.029031;
         const points = [
-            [38466388.2988292, 3846057.4789985027],
-            [38466363.106568456, 3845818.992263477],
-            [38465901.24845485, 3845798.838454883],
-            [38466353.02966416, 3845693.030959766],
-            [38466146.45312607, 3845330.2624050784],
-            [38466472.27303167, 3845647.68489043],
-            [38466630.14453232, 3845652.7233425784],
-            [38466824.96468206, 3845338.659825326],
-            [38466720.836670995, 3845666.1592149744],
-            [38466720.836670995, 3845795.479486784],
-            [38467118.87439072, 3845798.838454883],
-            [38466725.87512314, 3845884.4921414065],
-            [38466880.38765569, 3846185.1197862634],
-            [38466650.29834092, 3845906.3254340496],
-            [38466472.27303167, 3845887.8511095056],
-            [38466388.2988292, 3846057.4789985027], // 闭合
-        ];
+            [38475934.749355, 3847665.029031],
+            [38475943.144576, 3847665.020336],
+            [38475943.157475, 3847667.650043],
+            [38475948.069688, 3847667.625946],
+            [38475948.056889, 3847665.015239],
+            [38475965.075333, 3847664.997649],
+            [38475965.078432, 3847667.637057],
+            [38475969.957144, 3847667.63136],
+            [38475969.954046, 3847664.992652],
+            [38475986.610989, 3847664.975363],
+            [38475986.618087, 3847667.64997],
+            [38475991.4743, 3847667.637073],
+            [38475991.467201, 3847664.970366],
+            [38476000.037023, 3847664.961571],
+            [38476000.028428, 3847654.810443],
+            [38475934.73066, 3847654.818002],
+            [38475934.749355, 3847665.029031],
+        ]
 
         // 2. 平移原点，使模型在中心附近（避免数值太大）
         const center = this.getCenterFromPoints(points);
 
         // 缩小坐标点（米 → 单位坐标），再设置合适的建筑高度
-        const scale = 0.01;
-        const height = 5; // 30 米变为 0.03 单位（配合缩放）
+        const scale = 1;
+        const height = 30; // 30 米变为 0.03 单位（配合缩放）
 
         const outerPoints = points.map(([x, y], i) => {
             const px = (x - center.x) * scale;
@@ -973,21 +1012,28 @@ class Map {
         const mapMaterials = {};
         let indexFace = 0;
         let currFace = faceMap[0];
-        let currIndex = 0;
+        let count = 0;
+        let start = 0;
         for (let i = 0; i < faceMap.length; i++) {
-            if (currFace !== faceMap[i] || i === faceMap.length - 1) {
-                geometry.addGroup(currIndex * 3, i * 3, indexFace);
+            let isEnd = i === faceMap.length - 1;
+            if (currFace !== faceMap[i] || isEnd) {
+                if (isEnd) {
+                    count += 3;
+                }
+
+                geometry.addGroup(start, count, indexFace);
 
                 // 添加材质
                 mapMaterials[currFace] = indexFace;
-                sideMaterials.push(new THREE.MeshStandardMaterial({}));
+                sideMaterials.push(new THREE.MeshStandardMaterial({side: THREE.DoubleSide}));
 
-                currIndex = i;
                 currFace = faceMap[i];
                 indexFace++;
+                start += count
+                count = 0;
             }
+            count += 3;
         }
-
         // 创建 Mesh
         const mesh = new THREE.Mesh(geometry, sideMaterials);
         mesh.rotateX(-Math.PI / 2); // 放到地面
@@ -1100,6 +1146,16 @@ class Map {
             return meshes;
         }
 
+        // const edges = new THREE.EdgesGeometry(geometry);
+        // const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
+        // line2.rotation.x = -Math.PI / 2;
+        // scene.add(line2);
+
+        // const wireframe = new THREE.WireframeGeometry(geometry);
+        // const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({color: 0xff0000}));
+        // line.rotation.x = -Math.PI / 2;
+        // scene.add(line);
+
         return mesh;
     }
 
@@ -1114,8 +1170,13 @@ class Map {
                 // result 是 ArrayBuffer（如果是 binary: true）或 JSON
                 const blob = new Blob([result], {type: 'application/octet-stream'});
                 that.saveBlob(blob, 'model.glb'); // 下载
-            },
-            {binary: true} // ⬅️ 设置为 true 表示导出为 .glb（二进制）
+            }, null,
+            {
+                binary: true,             // 是否导出为 .glb（二进制），否则是 .gltf（JSON）
+                embedImages: true,        // 是否内嵌贴图
+                onlyVisible: false,       // 是否只导出 visible=true 的对象
+                truncateDrawRange: true,  // 移除未使用顶点
+            }
         );
     }
 
