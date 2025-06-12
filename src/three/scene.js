@@ -187,20 +187,43 @@ class Map {
 
     loadMouseEvent() {
         const that = this;
+        const renderer = this._renderer;
+        const camera = this._camera;
+        const group = this._group;
+
+        let clickTimer = null;
+        const CLICK_DELAY = 250; // 时间间隔，双击一般在 300ms 以内，250ms 较为保险
+
         let isClick = false;
         const clickStart = new THREE.Vector2();
-        const renderer = this._renderer;
 
-        renderer.domElement.addEventListener('mousedown', (event) => {
-            that._events.mousedown.forEach(e => e.event && e.event.call(e.scope, event));
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let intersects = [];
+        renderer.domElement.addEventListener('pointerdown', (event) => {
+            that._events.mousedown.forEach(e => e.event && e.event.call(e.scope, event, intersects));
             if (event.button === 0) { // 左键
                 isClick = true;
                 clickStart.set(event.clientX, event.clientY);
             }
         });
 
-        renderer.domElement.addEventListener('mousemove', (event) => {
-            that._events.mousemove.forEach(e => e.event && e.event.call(e.scope, event));
+        renderer.domElement.addEventListener('pointermove', (event) => {
+
+            if (that._events.mousedown.length > 0
+                || that._events.mouseup.length > 0
+                || that._events.mousemove.length > 0
+                || that._events.click.length > 0
+                || that._events.dbClick.length > 0
+            ) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                intersects = raycaster.intersectObjects(group.children, true);
+            }
+
+            that._events.mousemove.forEach(e => e.event && e.event.call(e.scope, event, intersects));
 
             const move = new THREE.Vector2(event.clientX, event.clientY);
             if (move.distanceTo(clickStart) > 5) {
@@ -208,21 +231,33 @@ class Map {
             }
         });
 
-        renderer.domElement.addEventListener('mouseup', (event) => {
-            that._events.mouseup.forEach(e => e.event && e.event.call(e.scope, event));
+        renderer.domElement.addEventListener('pointerup', (event) => {
+            that._events.mouseup.forEach(e => e.event && e.event.call(e.scope, event, intersects));
 
             if (event.button === 0 && isClick) {
-                that._events.click.forEach(e => e.event && e.event.call(e.scope, event));
+                if (clickTimer) {
+                    clearTimeout(clickTimer);
+                    clickTimer = null;
+                }
+                clickTimer = setTimeout(() => {
+                    that._events.click.forEach(e => e.event && e.event.call(e.scope, event, intersects));
+                }, CLICK_DELAY)
             }
+        });
+
+        renderer.domElement.addEventListener('dblclick', (event) => {
+            if (clickTimer) {
+                clearTimeout(clickTimer); // 阻止 click 的执行
+                clickTimer = null;
+            }
+            that._events.dbClick.forEach(e => e.event && e.event.call(e.scope, event, intersects));
         });
     }
 
     loadDbClickEvent() {
         const that = this;
         const renderer = this._renderer;
-        renderer.domElement.addEventListener('dblclick', (event) => {
-            that._events.dbClick.forEach(e => e.event && e.event.call(e.scope, event));
-        });
+
     }
 
     loadEvent() {
@@ -1324,15 +1359,8 @@ class Map {
         // 鼠标拾取
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
-        this.onMousemove((event) => {
-
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(mouse, camera);
-
-
+        this.onMousemove((event, intersects) => {
             // 检查所有模型是否被射线击中
-            const intersects = raycaster.intersectObjects(group.children, true);
             if (intersects.length === 0) {
                 currGeometry = null;
                 tubeGroup.clear()
@@ -1369,16 +1397,24 @@ class Map {
             // tubeGroup.add(mergedMesh);
         })
 
-        this.onDbClick((event) => {
+        const textureLoader = new THREE.TextureLoader();
 
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(mouse, camera);
-
-
-            // 检查所有模型是否被射线击中
-            const intersects = raycaster.intersectObjects(group.children, true);
+        this.onClick((event, intersects) => {
             if (intersects.length === 0) {
+                return;
+            }
+            let intersect = intersects[0];
+            // intersect.object.
+            console.log(intersect)
+            let map = textureLoader.load('/resource/20051814itj9ddm3.jpg');
+            map.wrapS = THREE.RepeatWrapping;
+            map.wrapT = THREE.RepeatWrapping;
+            intersect.object.material = new THREE.MeshStandardMaterial({map: map, side: THREE.DoubleSide})
+            intersect.object.material.needsUpdate = true;
+        })
+
+        this.onDbClick((event) => {
+            if (tubeGroup.children.length === 0) {
                 return;
             }
             that.flyTo(tubeGroup)
