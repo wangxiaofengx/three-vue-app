@@ -3,6 +3,7 @@ import gsap from 'gsap';
 import Stats from 'stats.js';
 import {OBJLoader} from 'three/examples/jsm/loaders/OBJLoader.js';
 import {MTLLoader} from 'three/examples/jsm/loaders/MTLLoader.js';
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -13,11 +14,13 @@ class Map {
 
     constructor(options) {
         this.canvas = null;
+        this._group = null;
         this._events = {
             animate: [],
             renderBefore: [],
             renderAfter: [],
             click: [],
+            dbClick: [],
             mousemove: [],
             mousedown: [],
             mouseup: []
@@ -30,8 +33,12 @@ class Map {
         const scene = this._scene = new THREE.Scene();
         const canvas = this.canvas;
 
-        const axesHelper = new THREE.AxesHelper(5);
-        scene.add(axesHelper);
+        const group = this._group = new THREE.Group();
+        scene.add(group);
+
+
+        // const axesHelper = new THREE.AxesHelper(5);
+        // scene.add(axesHelper);
 
         const camera = this._camera = new THREE.PerspectiveCamera(
             75,
@@ -146,6 +153,14 @@ class Map {
         this.un('click', listener, scope)
     }
 
+    onDbClick(listener, scope) {
+        this.on('dbClick', listener, scope)
+    }
+
+    unDbClick(listener, scope) {
+        this.un('dbClick', listener, scope)
+    }
+
     onMousemove(listener, scope) {
         this.on('mousemove', listener, scope)
     }
@@ -173,9 +188,10 @@ class Map {
     loadMouseEvent() {
         const that = this;
         let isClick = false;
-        let clickStart = new THREE.Vector2();
+        const clickStart = new THREE.Vector2();
+        const renderer = this._renderer;
 
-        window.addEventListener('mousedown', (event) => {
+        renderer.domElement.addEventListener('mousedown', (event) => {
             that._events.mousedown.forEach(e => e.event && e.event.call(e.scope, event));
             if (event.button === 0) { // 左键
                 isClick = true;
@@ -183,7 +199,7 @@ class Map {
             }
         });
 
-        window.addEventListener('mousemove', (event) => {
+        renderer.domElement.addEventListener('mousemove', (event) => {
             that._events.mousemove.forEach(e => e.event && e.event.call(e.scope, event));
 
             const move = new THREE.Vector2(event.clientX, event.clientY);
@@ -192,7 +208,7 @@ class Map {
             }
         });
 
-        window.addEventListener('mouseup', (event) => {
+        renderer.domElement.addEventListener('mouseup', (event) => {
             that._events.mouseup.forEach(e => e.event && e.event.call(e.scope, event));
 
             if (event.button === 0 && isClick) {
@@ -201,8 +217,17 @@ class Map {
         });
     }
 
+    loadDbClickEvent() {
+        const that = this;
+        const renderer = this._renderer;
+        renderer.domElement.addEventListener('dblclick', (event) => {
+            that._events.dbClick.forEach(e => e.event && e.event.call(e.scope, event));
+        });
+    }
+
     loadEvent() {
         this.loadMouseEvent();
+        this.loadDbClickEvent();
     }
 
     loadFps() {
@@ -217,6 +242,7 @@ class Map {
     loadGrid(scene) {
 
         const gridHelper = new THREE.GridHelper(1000, 1000, 0xff0000, 0x999999);
+        gridHelper.userData.skipExport = true;
         scene.add(gridHelper);
 
         // const grid1 = new THREE.GridHelper(1000, 1000);
@@ -250,6 +276,7 @@ class Map {
     }
 
     loadModel() {
+        const group = this._group;
         const scene = this._scene;
         return new Promise(resolve => {
             // 加载 OBJ 模型
@@ -262,7 +289,7 @@ class Map {
                 objLoader.setMaterials(materials);
                 // mtlLoader.setPath('/model/buildings/');
                 objLoader.load('/model/grass/building_04.obj', (object) => {
-                    scene.add(object);
+                    group.add(object);
                     // 计算模型的包围盒
                     const box = new THREE.Box3().setFromObject(object);
                     console.log(box)
@@ -277,6 +304,7 @@ class Map {
     async loadModel2() {
         const that = this;
         const scene = this._scene;
+        const group = this._group;
         // 1. 你的 EPSG:4526 坐标点
         const points = [
             [38466388.2988292, 3846057.4789985027],
@@ -352,18 +380,18 @@ class Map {
         // ✅ 把建筑从 XY 平面竖起来（Z轴为高度方向）
         mesh.rotation.x = -Math.PI / 2;
 
-        scene.add(mesh);
+        group.add(mesh);
 
         // const wireframe = new THREE.WireframeGeometry(geometry);
         // const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({color: 0xff0000}));
         // line.rotation.x = -Math.PI / 2;
-        // scene.add(line);
+        // group.add(line);
 
         // 轮廓线
         // const edges = new THREE.EdgesGeometry(geometry);
         // const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
         // line2.rotation.x = -Math.PI / 2;
-        // scene.add(line2);
+        // group.add(line2);
 
         return mesh;
     }
@@ -371,6 +399,7 @@ class Map {
     async loadModel21() {
         const that = this;
         const scene = this._scene;
+        const group = this._group;
         // 1. 你的 EPSG:4526 坐标点
         const points = [
             [38466388.2988292, 3846057.4789985027],
@@ -474,16 +503,17 @@ class Map {
             }
             count += 3;
         }
-        console.log(geometry.groups,sideMaterials)
+        console.log(geometry.groups, sideMaterials)
         // 创建 Mesh
         const mesh = new THREE.Mesh(geometry, sideMaterials);
         mesh.rotateX(-Math.PI / 2); // 放到地面
-        scene.add(mesh);
+        group.add(mesh);
         return mesh;
     }
 
     async loadModel3() {
         const scene = this._scene;
+        const group = this._group;
         // 外轮廓（顺时针）
         const outerPoints = [
             new THREE.Vector2(0, 0),
@@ -520,7 +550,7 @@ class Map {
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        scene.add(mesh);
+        group.add(mesh);
         return mesh;
     }
 
@@ -528,6 +558,7 @@ class Map {
 
         const that = this;
         const scene = this._scene;
+        const group = this._group;
         const renderer = this._renderer;
         const camera = this._camera;
 
@@ -614,7 +645,7 @@ class Map {
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        scene.add(mesh);
+        group.add(mesh);
 
 // 鼠标拾取
         const raycaster = new THREE.Raycaster();
@@ -672,6 +703,7 @@ class Map {
     async loadModel5() {
         const that = this;
         const scene = this._scene;
+        const group = this._group;
         const renderer = this._renderer;
         const camera = this._camera;
 
@@ -729,7 +761,7 @@ class Map {
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        scene.add(mesh);
+        group.add(mesh);
 
         // 标记每个三角形属于哪个“逻辑面”
         const index = geometry.index.array;
@@ -829,7 +861,7 @@ class Map {
         this.onClick(onClick)
         // window.addEventListener('click', onClick);
         let outlineGroup = new THREE.Group(); // 保存当前轮廓
-        scene.add(outlineGroup);
+        group.add(outlineGroup);
 
         function showOutline(type) {
             outlineGroup.clear();
@@ -896,47 +928,11 @@ class Map {
     async loadModel6() {
         const that = this;
         const scene = this._scene;
+        const group = this._group;
         const renderer = this._renderer;
         const camera = this._camera;
 
         // 1. 你的 EPSG:4526 坐标点
-        // const points = [
-        //     [38466388.2988292, 3846057.4789985027],
-        //     [38466363.106568456, 3845818.992263477],
-        //     [38465901.24845485, 3845798.838454883],
-        //     [38466353.02966416, 3845693.030959766],
-        //     [38466146.45312607, 3845330.2624050784],
-        //     [38466472.27303167, 3845647.68489043],
-        //     [38466630.14453232, 3845652.7233425784],
-        //     [38466824.96468206, 3845338.659825326],
-        //     [38466720.836670995, 3845666.1592149744],
-        //     [38466720.836670995, 3845795.479486784],
-        //     [38467118.87439072, 3845798.838454883],
-        //     [38466725.87512314, 3845884.4921414065],
-        //     [38466880.38765569, 3846185.1197862634],
-        //     [38466650.29834092, 3845906.3254340496],
-        //     [38466472.27303167, 3845887.8511095056],
-        //     [38466388.2988292, 3846057.4789985027], // 闭合
-        // ];
-
-
-        // 38475934.749355,3847665.029031
-        // 38475943.144576,3847665.020336
-        // 38475943.157475,3847667.650043
-        // 38475948.069688,3847667.625946
-        // 38475948.056889,3847665.015239
-        // 38475965.075333,3847664.997649
-        // 38475965.078432,3847667.637057
-        // 38475969.957144,3847667.63136
-        // 38475969.954046,3847664.992652
-        // 38475986.610989,3847664.975363
-        // 38475986.618087,3847667.64997
-        // 38475991.4743,3847667.637073
-        // 38475991.467201,3847664.970366
-        // 38476000.037023,3847664.961571
-        // 38476000.028428,3847654.810443
-        // 38475934.73066,3847654.818002
-        // 38475934.749355,3847665.029031;
         const points = [
             [38475934.749355, 3847665.029031],
             [38475943.144576, 3847665.020336],
@@ -962,7 +958,7 @@ class Map {
 
         // 缩小坐标点（米 → 单位坐标），再设置合适的建筑高度
         const scale = 1;
-        const height = 30; // 30 米变为 0.03 单位（配合缩放）
+        const height = 15; // 30 米变为 0.03 单位（配合缩放）
 
         const outerPoints = points.map(([x, y], i) => {
             const px = (x - center.x) * scale;
@@ -1037,13 +1033,13 @@ class Map {
         // 创建 Mesh
         const mesh = new THREE.Mesh(geometry, sideMaterials);
         mesh.rotateX(-Math.PI / 2); // 放到地面
-        scene.add(mesh);
+        group.add(mesh);
 
         const outlineClickGroup = new THREE.Group(); // 保存当前轮廓
-        scene.add(outlineClickGroup);
+        group.add(outlineClickGroup);
 
         const outlineMousemoveGroup = new THREE.Group(); // 保存当前轮廓
-        scene.add(outlineMousemoveGroup);
+        group.add(outlineMousemoveGroup);
 
         const mouseFace = {
             click: null,
@@ -1094,39 +1090,43 @@ class Map {
         })
 
         function getOutlines(type) {
-            if (type === 'bottom') {
-                return [];
-            }
-            const indices = [];
-            for (let i = 0; i < faceMap.length; i++) {
-                if (faceMap[i] === type) {
-                    const ia = geometry.index.getX(i * 3);
-                    const ib = geometry.index.getX(i * 3 + 1);
-                    const ic = geometry.index.getX(i * 3 + 2);
-                    if (!indices.includes(ia)) {
-                        indices.push(ia);
-                    }
-                    if (!indices.includes(ib)) {
-                        indices.push(ib);
-                    }
-                    if (!indices.includes(ic)) {
-                        indices.push(ic);
-                    }
-                }
-            }
-            const pos = geometry.attributes.position;
-            const vertices = indices.map(i => new THREE.Vector3(
-                pos.getX(i), pos.getY(i), pos.getZ(i)
-            ));
+
             const edges = [];
-            if (type === 'top') {
-                for (let i = 1; i < vertices.length; i++) {
-                    edges.push([vertices[i - 1], vertices[i]])
-                    if (i === vertices.length - 1) {
-                        edges.push([vertices[i], vertices[0]]);
+            if (type === 'top' || type === 'bottom') {
+                const z = type === 'top' ? height : 0;
+                for (let i = 1; i < outerPoints.length; i++) {
+                    const point1 = new THREE.Vector3(outerPoints[i - 1].x, outerPoints[i - 1].y, z);
+                    const point2 = new THREE.Vector3(outerPoints[i].x, outerPoints[i].y, z);
+                    edges.push([point1, point2])
+                }
+                // for (let i = 1; i < vertices.length; i++) {
+                //     edges.push([vertices[i - 1], vertices[i]])
+                //     if (i === vertices.length - 1) {
+                //         edges.push([vertices[i], vertices[0]]);
+                //     }
+                // }
+            } else {
+                const indices = [];
+                for (let i = 0; i < faceMap.length; i++) {
+                    if (faceMap[i] === type) {
+                        const ia = geometry.index.getX(i * 3);
+                        const ib = geometry.index.getX(i * 3 + 1);
+                        const ic = geometry.index.getX(i * 3 + 2);
+                        if (!indices.includes(ia)) {
+                            indices.push(ia);
+                        }
+                        if (!indices.includes(ib)) {
+                            indices.push(ib);
+                        }
+                        if (!indices.includes(ic)) {
+                            indices.push(ic);
+                        }
                     }
                 }
-            } else {
+                const pos = geometry.attributes.position;
+                const vertices = indices.map(i => new THREE.Vector3(
+                    pos.getX(i), pos.getY(i), pos.getZ(i)
+                ));
                 edges.push(
                     [vertices[0], vertices[1]],
                     [vertices[1], vertices[3]],
@@ -1149,14 +1149,98 @@ class Map {
         // const edges = new THREE.EdgesGeometry(geometry);
         // const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
         // line2.rotation.x = -Math.PI / 2;
-        // scene.add(line2);
+        // group.add(line2);
 
         // const wireframe = new THREE.WireframeGeometry(geometry);
         // const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({color: 0xff0000}));
         // line.rotation.x = -Math.PI / 2;
-        // scene.add(line);
+        // group.add(line);
 
         return mesh;
+    }
+
+    async loadModel7() {
+        const group = this._group;
+        const scene = this._scene;
+        const camera = this._camera;
+        const loader = new GLTFLoader();
+        const model = await new Promise(resolve => {
+            loader.load('/model/glb/model.glb', (gltf) => {
+                const model = gltf.scene;
+                // 计算模型的包围盒
+                const box = new THREE.Box3().setFromObject(model);
+                const minY = box.min.y;
+                model.position.y -= minY;
+                group.add(model);
+                resolve(model);
+            }, undefined, (error) => {
+                console.error('加载 glb 出错：', error);
+            });
+        });
+        model.traverse((child) => {
+            if (child.isMesh) {
+                console.log(child)
+                // if(child.name === 'mesh_0_1'){
+                //     const wireframe = new THREE.WireframeGeometry(child.geometry);
+                //     const line = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({color: 0xff0000}));
+                //     line.rotation.x = -Math.PI / 2;
+                //     group.add(line);
+                // }
+            }
+        })
+
+        let currIntersect;
+        const tubeGroup = new THREE.Group();
+        scene.add(tubeGroup);
+        // 鼠标拾取
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        this.onMousemove((event) => {
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+
+            // 检查所有模型是否被射线击中
+            const intersects = raycaster.intersectObjects(group.children, true);
+            if (intersects.length === 0) {
+                currIntersect = null;
+                tubeGroup.clear()
+                return;
+            }
+
+            const intersect = intersects[0];
+            const geometry = intersect.object.geometry;
+            if (currIntersect === geometry) {
+                return;
+            }
+            tubeGroup.clear();
+            currIntersect = geometry;
+            // 使用 EdgesGeometry 自动提取边缘
+            const edges = new THREE.EdgesGeometry(geometry, 1); // 第二参数是角度阈值（默认1，越小越灵敏）
+            // const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00ffff}));
+            // line2.applyMatrix4(intersect.object.matrixWorld);
+            // tubeGroup.add(line2);
+
+            const tubeGeometries = [];
+            const pos = edges.attributes.position;
+            for (let i = 0; i < pos.count; i += 2) {
+                const start = new THREE.Vector3().fromBufferAttribute(pos, i);
+                const end = new THREE.Vector3().fromBufferAttribute(pos, i + 1);
+
+                const curve = new THREE.LineCurve3(start, end);
+                const tubeGeometry = new THREE.TubeGeometry(curve, 1, 0.04, 4, false);
+                tubeGeometries.push(tubeGeometry);
+            }
+            const tubeMaterial = new THREE.MeshStandardMaterial({color: 0x00ffff});
+            const merged = BufferGeometryUtils.mergeGeometries(tubeGeometries);
+            const mergedMesh = new THREE.Mesh(merged, tubeMaterial);
+            mergedMesh.applyMatrix4(intersect.object.matrixWorld);
+            tubeGroup.add(mergedMesh);
+        })
+
+        return model;
     }
 
     exportGlb(meshOrGroup) {
@@ -1181,10 +1265,208 @@ class Map {
     }
 
     exportScene() {
+        const that = this;
+        // const sceneCopy = this._scene.clone(true);
+        //
+        // sceneCopy.traverse((obj) => {
+        //     if (obj.name.includes('Helper') || obj.userData.skipExport) {
+        //         obj.parent && obj.parent.remove(obj);
+        //     }
+        // });
+        const exporter = new GLTFExporter();
 
+// 例如：导出一个 mesh 或 group
+        exporter.parse(
+            this._group,
+            (result) => {
+                // result 是 ArrayBuffer（如果是 binary: true）或 JSON
+                const blob = new Blob([result], {type: 'application/octet-stream'});
+                that.saveBlob(blob, 'model.glb'); // 下载
+            }, null,
+            {
+                binary: true,             // 是否导出为 .glb（二进制），否则是 .gltf（JSON）
+                embedImages: true,        // 是否内嵌贴图
+                onlyVisible: true,       // 是否只导出 visible=true 的对象
+                truncateDrawRange: true,  // 移除未使用顶点
+            }
+        );
+    }
+
+    exportJson() {
+        let toJSON = this._scene.toJSON();
+        console.log(toJSON)
+        let s = JSON.stringify(toJSON);
+        const blob = new Blob([s], {type: "text/plain;charset=utf-8"});
+        this.saveBlob(blob, 'model.json')
+    }
+
+    async importGlb(blob) {
+        const that = this;
+        const group = this._group;
+        const scene = this._scene;
+        const camera = this._camera;
+        const loader = new GLTFLoader();
+
+        let gltf = await loader.parseAsync(blob);
+        console.log(gltf);
+        const model = gltf.scene;
+
+        // 计算模型的包围盒
+        const box = new THREE.Box3().setFromObject(model);
+        const minY = box.min.y;
+        model.position.y -= minY;
+
+        group.add(model);
+
+        let currGeometry;
+        const tubeGroup = new THREE.Group();
+        scene.add(tubeGroup);
+        // 鼠标拾取
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        this.onMousemove((event) => {
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+
+            // 检查所有模型是否被射线击中
+            const intersects = raycaster.intersectObjects(group.children, true);
+            if (intersects.length === 0) {
+                currGeometry = null;
+                tubeGroup.clear()
+                return;
+            }
+
+            const intersect = intersects[0];
+            const geometry = intersect.object.geometry;
+            if (currGeometry === geometry) {
+                return;
+            }
+            tubeGroup.clear();
+            currGeometry = geometry;
+            // 使用 EdgesGeometry 自动提取边缘
+            const edges = new THREE.EdgesGeometry(geometry, 1); // 第二参数是角度阈值（默认1，越小越灵敏）
+            const line2 = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0xff0000}));
+            line2.applyMatrix4(intersect.object.matrixWorld);
+            tubeGroup.add(line2);
+
+            // const tubeGeometries = [];
+            // const pos = edges.attributes.position;
+            // for (let i = 0; i < pos.count; i += 2) {
+            //     const start = new THREE.Vector3().fromBufferAttribute(pos, i);
+            //     const end = new THREE.Vector3().fromBufferAttribute(pos, i + 1);
+            //
+            //     const curve = new THREE.LineCurve3(start, end);
+            //     const tubeGeometry = new THREE.TubeGeometry(curve, 1, 0.04, 4, false);
+            //     tubeGeometries.push(tubeGeometry);
+            // }
+            // const tubeMaterial = new THREE.MeshStandardMaterial({color: 0x00ffff});
+            // const merged = BufferGeometryUtils.mergeGeometries(tubeGeometries);
+            // const mergedMesh = new THREE.Mesh(merged, tubeMaterial);
+            // mergedMesh.applyMatrix4(intersect.object.matrixWorld);
+            // tubeGroup.add(mergedMesh);
+        })
+
+        this.onDbClick((event) => {
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+
+            // 检查所有模型是否被射线击中
+            const intersects = raycaster.intersectObjects(group.children, true);
+            if (intersects.length === 0) {
+                return;
+            }
+            that.flyTo(tubeGroup)
+        })
+
+        return model;
+    }
+
+    save() {
+        console.log(this._group)
+    }
+
+    importJson(json) {
+        const scene = this._scene;
+        if (typeof json === 'string') {
+            json = JSON.parse(json);
+        }
+        const loader = new THREE.ObjectLoader();
+        const object = loader.parse(json);
+        scene.add(object);
     }
 
     flyTo(object) {
+        const camera = this._camera;
+        const controls = this._controls;
+
+        // 计算 object 的包围盒（object 是 tubeGroup，含轮廓线）
+        const box = new THREE.Box3().setFromObject(object);
+        const center = new THREE.Vector3();
+        const size = new THREE.Vector3();
+
+        box.getCenter(center);
+        box.getSize(size);
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+
+        // 相机视角（角度）转弧度
+        const fov = camera.fov * (Math.PI / 180);
+        const distance = maxDim / (2 * Math.tan(fov / 2));
+        const offset = distance * 1.5;
+
+        // ✅ 获取当前相机的世界方向，并取反（朝向模型）
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        direction.negate(); // 取反：相机看向模型
+
+        // ✅ 计算新的相机位置
+        const newCamPos = center.clone().add(direction.multiplyScalar(offset));
+
+        return new Promise(resolve => {
+            // 使用计数器等两段动画是否都完成
+            let completeCount = 0;
+            const checkDone = () => {
+                completeCount++;
+                if (completeCount === 2) {
+                    resolve();
+                }
+            };
+
+            // ✅ 使用动画移动相机位置
+            gsap.to(camera.position, {
+                x: newCamPos.x,
+                y: newCamPos.y,
+                z: newCamPos.z,
+                duration: 1.5,
+                ease: 'power2.inOut',
+                onUpdate: () => {
+                    camera.lookAt(center);
+                },
+                onComplete: checkDone
+            });
+
+            // ✅ 动画设置 OrbitControls 的焦点
+            gsap.to(controls.target, {
+                x: center.x,
+                y: center.y,
+                z: center.z,
+                duration: 1.5,
+                ease: 'power2.inOut',
+                onUpdate: () => {
+                    controls.update();
+                },
+                onComplete: checkDone
+            });
+        });
+    }
+
+    flyTo2(object) {
         const camera = this._camera;
         const controls = this._controls;
         const box = new THREE.Box3().setFromObject(object);
@@ -1228,11 +1510,13 @@ class Map {
     }
 
     clear() {
-        this._scene.clear();
+        const group = this._group;
+        group.clear();
     }
 
     remove(obj) {
-        this._scene.remove(obj)
+        const group = this._group;
+        group.remove(obj);
     }
 
     /**

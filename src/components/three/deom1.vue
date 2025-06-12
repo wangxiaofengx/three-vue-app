@@ -8,7 +8,13 @@
             <button @click="loadModel4">加载鼠标移动渲染颜色</button>
             <button @click="loadModel5">加载鼠标点击渲染边线</button>
             <button @click="loadModel6">加载鼠标点击渲染贴图</button>
-            <button @click="exportGlb">导出glb</button>
+            <button @click="loadModel7">加载导出模型渲染贴图</button>
+            <button @click="exportGlb">导出当前模型</button>
+            <button @click="exportScene">导出当前场景</button>
+            <!--            <button @click="exportJson">导出Json</button>-->
+            <button @click="save">保存</button>
+            <input type="file" @change="handleFile" accept=".glb"/>
+            <!--            <button @click="importJson">导入Json</button>-->
         </div>
         <canvas ref="canvas" class="webgl"></canvas>
     </div>
@@ -37,30 +43,55 @@ const loadModel2 = async () => {
 const loadModel21 = async () => {
     currModel && map.remove(currModel)
     let model = currModel = await map.loadModel21();
-    map.flyTo(model);
+    await map.flyTo(model);
 }
 const loadModel3 = async () => {
     currModel && map.remove(currModel)
     let model = currModel = await map.loadModel3();
-    map.flyTo(model);
+    await map.flyTo(model);
 }
 const loadModel4 = async () => {
     currModel && map.remove(currModel)
     let model = currModel = await map.loadModel4();
-    map.flyTo(model);
+    await map.flyTo(model);
 }
 const loadModel5 = async () => {
     currModel && map.remove(currModel)
     let model = currModel = await map.loadModel5();
-    map.flyTo(model);
+    await map.flyTo(model);
 }
 const loadModel6 = async () => {
     currModel && map.remove(currModel)
     let model = currModel = await map.loadModel6();
-    map.flyTo(model);
+    await map.flyTo(model);
+}
+const loadModel7 = async () => {
+    currModel && map.remove(currModel)
+    let model = currModel = await map.loadModel7();
+    await map.flyTo(model);
 }
 const exportGlb = async () => {
     map.exportGlb(currModel);
+}
+const exportScene = async () => {
+    map.exportScene();
+}
+const exportJson = async () => {
+    map.exportJson();
+}
+const save = async () => {
+    map.save();
+}
+const handleFile = (event) => {
+    currModel && map.remove(currModel)
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        let model = currModel = await map.importGlb(e.target.result);
+        map.flyTo(model);
+    };
+
+    reader.readAsArrayBuffer(file);
 }
 onMounted(async () => {
     map = new Map({canvas: canvas.value});
