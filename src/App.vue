@@ -1,9 +1,8 @@
 <script setup>
-import threeDemo1 from './components/three/deom1.vue'
 </script>
 
 <template>
-    <threeDemo1/>
+    <router-view></router-view>
 </template>
 
 <style>

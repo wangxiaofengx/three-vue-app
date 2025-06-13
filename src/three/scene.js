@@ -13,7 +13,7 @@ import {GLTFExporter} from 'three/examples/jsm/exporters/GLTFExporter.js';
 class Map {
 
     constructor(options) {
-        this.canvas = null;
+        this._canvas = options.canvas;
         this._group = null;
         this._events = {
             animate: [],
@@ -25,15 +25,16 @@ class Map {
             mousedown: [],
             mouseup: []
         }
-        Object.assign(this, options);
     }
 
     async init() {
         const that = this;
         const scene = this._scene = new THREE.Scene();
-        const canvas = this.canvas;
+        const canvas = this._canvas;
 
         const group = this._group = new THREE.Group();
+        group.name = "root"
+        group.userData.name = "root"
         scene.add(group);
 
 
@@ -44,10 +45,16 @@ class Map {
             75,
             canvas.clientWidth / canvas.clientHeight,
             0.1,
-            2000
+            1000
         );
 
-        const renderer = this._renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+        // 调整相机位置
+        const distance = 15;
+        const angle = Math.PI / 2;
+        camera.position.set(distance * Math.cos(angle), distance, distance * Math.sin(angle));
+        camera.lookAt(0, 0, 0);
+
+        const renderer = this._renderer = new THREE.WebGLRenderer({canvas: canvas, antialias: true});
         renderer.setSize(canvas.clientWidth, canvas.clientHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
 
@@ -1006,6 +1013,7 @@ class Map {
             depth: height,
             bevelEnabled: false
         });
+        console.log(geometry)
 
         if (!geometry.index) {
             geometry = BufferGeometryUtils.mergeVertices(geometry);
@@ -1071,10 +1079,10 @@ class Map {
         group.add(mesh);
 
         const outlineClickGroup = new THREE.Group(); // 保存当前轮廓
-        group.add(outlineClickGroup);
+        scene.add(outlineClickGroup);
 
         const outlineMousemoveGroup = new THREE.Group(); // 保存当前轮廓
-        group.add(outlineMousemoveGroup);
+        scene.add(outlineMousemoveGroup);
 
         const mouseFace = {
             click: null,
@@ -1343,9 +1351,12 @@ class Map {
         const loader = new GLTFLoader();
 
         let gltf = await loader.parseAsync(blob);
-        console.log(gltf);
-        const model = gltf.scene;
 
+        let model = gltf.scene;
+        while (model.isObject3D && model.children.length === 1) {
+            model = model.children[0];
+        }
+        console.log(model);
         // 计算模型的包围盒
         const box = new THREE.Box3().setFromObject(model);
         const minY = box.min.y;
@@ -1360,6 +1371,7 @@ class Map {
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         this.onMousemove((event, intersects) => {
+            intersects = intersects.filter(item => item.object.visible);
             // 检查所有模型是否被射线击中
             if (intersects.length === 0) {
                 currGeometry = null;
@@ -1400,17 +1412,22 @@ class Map {
         const textureLoader = new THREE.TextureLoader();
 
         this.onClick((event, intersects) => {
+            intersects = intersects.filter(item => item.object.visible);
             if (intersects.length === 0) {
                 return;
             }
             let intersect = intersects[0];
-            // intersect.object.
-            console.log(intersect)
-            let map = textureLoader.load('/resource/20051814itj9ddm3.jpg');
-            map.wrapS = THREE.RepeatWrapping;
-            map.wrapT = THREE.RepeatWrapping;
-            intersect.object.material = new THREE.MeshStandardMaterial({map: map, side: THREE.DoubleSide})
-            intersect.object.material.needsUpdate = true;
+            // let map = textureLoader.load('/resource/20051814itj9ddm3.jpg');
+            // map.wrapS = THREE.RepeatWrapping;
+            // map.wrapT = THREE.RepeatWrapping;
+            // intersect.object.material = new THREE.MeshStandardMaterial({map: map, side: THREE.DoubleSide})
+            // intersect.object.material.needsUpdate = true;
+
+            // 隐藏模型，方便后续还原
+            intersect.object.visible = false;
+
+            // 删除模型
+            // that.remove(intersect.object)
         })
 
         this.onDbClick((event) => {
@@ -1551,8 +1568,30 @@ class Map {
     }
 
     remove(obj) {
-        const group = this._group;
-        group.remove(obj);
+        const scene = this._scene;
+
+        // 删除模型
+        const toRemove = [];
+        scene.traverse(child => {
+            if (child === obj) {
+                toRemove.push(child);
+            }
+        });
+
+        toRemove.forEach(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(m => m.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+
+            if (child.parent) {
+                child.parent.remove(child);
+            }
+        });
     }
 
     /**
